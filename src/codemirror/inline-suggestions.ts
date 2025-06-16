@@ -10,6 +10,7 @@ interface InlineSuggestion {
 let currentSuggestion: InlineSuggestion | null = null;
 let suggestionWidget: CodeMirror.LineWidget | null = null;
 let ghostTextMarker: CodeMirror.TextMarker | null = null;
+let autoDismissTimeout: number | null = null;
 
 export interface CMInlineSuggestionsOptions {
 	enabled?: boolean;
@@ -79,13 +80,16 @@ function showInlineSuggestion(editor: Editor, text: string, position: CodeMirror
 
 	console.log('Set current suggestion:', currentSuggestion);
 
-	// Auto-dismiss after 30 seconds
-	setTimeout(() => {
+	// Auto-dismiss after 60 seconds
+	if (autoDismissTimeout) {
+		clearTimeout(autoDismissTimeout);
+	}
+	autoDismissTimeout = window.setTimeout(() => {
 		if (currentSuggestion) {
-			console.log('Auto-dismissing suggestion after 30 seconds');
+			console.log('Auto-dismissing suggestion after 60 seconds');
 			clearSuggestion();
 		}
-	}, 30000);
+	}, 60000);
 }
 
 function clearSuggestion() {
@@ -97,6 +101,11 @@ function clearSuggestion() {
 	if (ghostTextMarker) {
 		ghostTextMarker.clear();
 		ghostTextMarker = null;
+	}
+
+	if (autoDismissTimeout) {
+		clearTimeout(autoDismissTimeout);
+		autoDismissTimeout = null;
 	}
 
 	currentSuggestion = null;
@@ -164,16 +173,34 @@ export function inlineSuggestionsOption(
 		}
 	});
 
-	// Clear suggestion when cursor moves
+	// Clear suggestion when cursor moves (with debouncing to avoid false triggers)
+	let cursorActivityTimeout: number | null = null;
 	editor.on('cursorActivity', () => {
-		if (currentSuggestion) {
-			const cursor = editor.getCursor();
-			if (cursor.line !== currentSuggestion.from.line || 
-				cursor.ch !== currentSuggestion.from.ch) {
-				console.log('Clearing suggestion due to cursor movement');
-				dismissSuggestion(editor, options);
-			}
+		if (!currentSuggestion) return;
+		
+		// Debounce cursor activity to avoid clearing suggestions immediately after showing them
+		if (cursorActivityTimeout) {
+			clearTimeout(cursorActivityTimeout);
 		}
+		
+		cursorActivityTimeout = window.setTimeout(() => {
+			if (currentSuggestion) {
+				const cursor = editor.getCursor();
+				console.log('Cursor activity check:', {
+					currentCursor: cursor,
+					suggestionPosition: currentSuggestion.from,
+					lineMatch: cursor.line === currentSuggestion.from.line,
+					chMatch: cursor.ch === currentSuggestion.from.ch
+				});
+				
+				if (cursor.line !== currentSuggestion.from.line || 
+					cursor.ch !== currentSuggestion.from.ch) {
+					console.log('Clearing suggestion due to cursor movement');
+					dismissSuggestion(editor, options);
+				}
+			}
+			cursorActivityTimeout = null;
+		}, 100); // Small delay to avoid false triggers
 	});
 
 	// Clear suggestion on blur

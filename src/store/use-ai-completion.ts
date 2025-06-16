@@ -58,11 +58,15 @@ class AICompletionService {
 			const textBeforeCursor = context.currentText.substring(0, context.cursorPosition);
 			const textAfterCursor = context.currentText.substring(context.cursorPosition);
 
-			const prompt = this.buildPrompt(storyContext, textBeforeCursor, textAfterCursor);
+			// Adjust for word boundaries to handle incomplete words properly
+			const adjustedContext = this.adjustForWordBoundaries(textBeforeCursor, textAfterCursor);
+			
+			const prompt = this.buildPrompt(storyContext, adjustedContext.textBefore, adjustedContext.textAfter, adjustedContext.incompleteWord, adjustedContext.isInPassageLink, adjustedContext.passageLinkContext);
 
 			console.log('Making API call to OpenAI with prompt:', {
 				storyContext: storyContext.substring(0, 200) + '...',
-				textBeforeCursor: textBeforeCursor.substring(Math.max(0, textBeforeCursor.length - 50)),
+				textBeforeCursor: adjustedContext.textBefore.substring(Math.max(0, adjustedContext.textBefore.length - 50)),
+				incompleteWord: adjustedContext.incompleteWord,
 				prompt: prompt.substring(0, 300) + '...'
 			});
 
@@ -102,7 +106,13 @@ class AICompletionService {
 
 			const data = await response.json();
 			console.log('OpenAI API response:', data);
-			const result = data.choices?.[0]?.message?.content?.trim() || null;
+			let result = data.choices?.[0]?.message?.content?.trim() || null;
+			
+			// Clean up the result by removing quotes and other unwanted formatting
+			if (result) {
+				result = this.cleanupSuggestion(result);
+			}
+			
 			console.log('Extracted completion:', result);
 			return result;
 		} catch (error) {
@@ -144,20 +154,67 @@ class AICompletionService {
 		return storyContext;
 	}
 
-	private buildPrompt(storyContext: string, textBefore: string, textAfter: string): string {
-		return `Context:
+	private buildPrompt(storyContext: string, textBefore: string, textAfter: string, incompleteWord?: string, isInPassageLink?: boolean, passageLinkContext?: string): string {
+		let promptText = `Context:
 ${storyContext}
 
 Current text being written:
-"${textBefore}[CURSOR]${textAfter}"
+"${textBefore}[CURSOR]${textAfter}"`;
+
+		if (isInPassageLink) {
+			if (passageLinkContext && passageLinkContext.trim().length > 0) {
+				promptText += `
+
+Note: The user is typing inside a passage link [[${passageLinkContext}]] and has started the passage name "${passageLinkContext}". Please complete this passage name to create a logical choice/decision for the reader. The completion should:
+- Continue naturally from "${passageLinkContext}"
+- Create a short, descriptive passage name (2-4 words total)
+- Represent a meaningful choice or action the reader can take
+- Fit naturally with the story's current situation`;
+			} else {
+				promptText += `
+
+Note: The user is typing inside a passage link [[]] at the cursor position. Please suggest a passage name that would be a logical choice/decision for the reader based on the current story context. The suggestion should be:
+- A short, descriptive passage name (2-4 words)
+- Represent a meaningful choice or action the reader can take
+- Fit naturally with the story's current situation
+- Be written as a clear decision or destination`;
+			}
+		} else if (incompleteWord) {
+			promptText += `
+
+Note: The user has started typing the word "${incompleteWord}" at the cursor position. Please provide a completion that starts with this word completed naturally, followed by the rest of the sentence.`;
+		}
+
+		if (isInPassageLink) {
+			if (passageLinkContext && passageLinkContext.trim().length > 0) {
+				promptText += `
+
+Please provide only the completion of the passage name (continuing from "${passageLinkContext}"), without the [[ ]] brackets. Do not repeat the text that's already there.`;
+			} else {
+				promptText += `
+
+Please provide only a passage name suggestion (without the [[ ]] brackets), nothing else.`;
+			}
+		} else {
+			promptText += `
 
 Please provide a natural continuation from the [CURSOR] position that:
 1. Fits the story's tone and style
 2. Maintains narrative consistency
 3. Is appropriate for interactive fiction
-4. Is 1-3 sentences long
+4. Is 1-3 sentences long`;
+
+			if (incompleteWord) {
+				promptText += `
+5. Starts by completing the word "${incompleteWord}" naturally`;
+			}
+
+			promptText += `
 
 Only return the suggested text continuation, nothing else. Do not surround the text with quotes.`;
+		}
+
+		return promptText;
 	}
 
 	private extractPassageLinks(text: string): string[] {
@@ -173,6 +230,116 @@ Only return the suggested text continuation, nothing else. Do not surround the t
 		}
 
 		return links;
+	}
+
+	private adjustForWordBoundaries(textBefore: string, textAfter: string): {textBefore: string, textAfter: string, incompleteWord?: string, isInPassageLink?: boolean, passageLinkContext?: string} {
+		// Check if we're inside a passage link [[...]]
+		const passageLinkMatch = this.detectPassageLinkContext(textBefore);
+		if (passageLinkMatch) {
+			console.log('Detected passage link context:', passageLinkMatch);
+			return {
+				textBefore,
+				textAfter,
+				isInPassageLink: true,
+				passageLinkContext: passageLinkMatch.partialName
+			};
+		}
+
+		// Check if we're in the middle of a word
+		const wordBoundaryRegex = /\s/;
+		
+		// If the text before cursor doesn't end with whitespace and there's more text,
+		// we might be in the middle of a word
+		if (textBefore.length > 0 && !wordBoundaryRegex.test(textBefore[textBefore.length - 1])) {
+			// Find the start of the current incomplete word
+			let wordStart = textBefore.length - 1;
+			while (wordStart > 0 && !wordBoundaryRegex.test(textBefore[wordStart - 1])) {
+				wordStart--;
+			}
+			
+			// Extract the incomplete word
+			const incompleteWord = textBefore.substring(wordStart);
+			
+			// Only adjust if the incomplete word is reasonable (not too long, contains letters)
+			if (incompleteWord.length > 0 && incompleteWord.length <= 20 && /[a-zA-Z]/.test(incompleteWord)) {
+				console.log('Detected incomplete word:', incompleteWord);
+				
+				// Adjust the context to end at the word boundary
+				const adjustedTextBefore = textBefore.substring(0, wordStart);
+				
+				// Add the incomplete word to the prompt context but not as part of the completion
+				return {
+					textBefore: adjustedTextBefore,
+					textAfter: textAfter,
+					incompleteWord
+				};
+			}
+		}
+		
+		// No adjustment needed
+		return {
+			textBefore,
+			textAfter
+		};
+	}
+
+	private detectPassageLinkContext(textBefore: string): {partialName: string, linkStart: number} | null {
+		// Look for an open [[ before the cursor
+		const beforeCursor = textBefore;
+		let linkStart = -1;
+		
+		// Find the last [[ that doesn't have a matching ]]
+		for (let i = beforeCursor.length - 1; i >= 1; i--) {
+			if (beforeCursor[i - 1] === '[' && beforeCursor[i] === '[') {
+				// Found [[, now check if there's a closing ]] before the cursor
+				const afterLinkStart = beforeCursor.substring(i + 1);
+				if (!afterLinkStart.includes(']]')) {
+					linkStart = i + 1;
+					break;
+				}
+			}
+		}
+		
+		if (linkStart === -1) return null;
+		
+		// Extract the partial passage name
+		const partialName = beforeCursor.substring(linkStart);
+		
+		// Make sure we're not after a closing ]]
+		if (partialName.includes(']]')) return null;
+		
+		return {
+			partialName,
+			linkStart
+		};
+	}
+
+	private cleanupSuggestion(suggestion: string): string {
+		let cleaned = suggestion.trim();
+		
+		// Remove surrounding quotes (single or double)
+		if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+			(cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+			cleaned = cleaned.slice(1, -1).trim();
+		}
+		
+		// Remove any remaining quotes at the beginning or end
+		cleaned = cleaned.replace(/^["']|["']$/g, '');
+		
+		// Remove any markdown formatting that might have snuck in
+		cleaned = cleaned.replace(/^\*\*|\*\*$/g, ''); // Bold
+		cleaned = cleaned.replace(/^\*|\*$/g, ''); // Italic
+		cleaned = cleaned.replace(/^`|`$/g, ''); // Code
+		
+		// Remove any leading/trailing brackets that aren't part of the content
+		if (cleaned.startsWith('[') && cleaned.endsWith(']') && !cleaned.includes('[[')) {
+			cleaned = cleaned.slice(1, -1).trim();
+		}
+		
+		// Clean up any extra whitespace
+		cleaned = cleaned.replace(/\s+/g, ' ').trim();
+		
+		return cleaned;
 	}
 }
 
