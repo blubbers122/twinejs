@@ -32,5 +32,11 @@ export const defaults = (): PrefsState => ({
 	storyListTagFilter: [],
 	storyTagColors: {},
 	useCodeMirror: true,
-	welcomeSeen: false
+	welcomeSeen: false,
+	aiCompletion: {
+		enabled: false,
+		apiKey: '',
+		model: 'gpt-3.5-turbo',
+		maxTokens: 100
+	}
 });

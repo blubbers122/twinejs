@@ -1,0 +1,102 @@
+@import '../../../styles/colors.css';
+@import '../../../styles/depth.css';
+@import '../../../styles/metrics.css';
+@import '../../../styles/typography.css';
+
+/* AI Suggestion Ghost Text */
+.ai-suggestion-ghost {
+	opacity: 0.5;
+	color: var(--gray);
+	font-style: italic;
+	background-color: transparent;
+	pointer-events: none;
+}
+
+/* AI Suggestion Preview Tooltip */
+.ai-suggestion-preview {
+	background: var(--off-white);
+	border: 1px solid var(--faint-gray);
+	border-radius: var(--corner-round);
+	box-shadow: var(--shadow-large);
+	font-family: var(--font-ui);
+	font-size: 0.9em;
+	margin-top: var(--grid-size);
+	max-width: 400px;
+	padding: calc(var(--grid-size) / 2);
+	position: relative;
+	z-index: 1000;
+}
+
+.ai-suggestion-text {
+	color: var(--dark-gray);
+	font-style: italic;
+	line-height: 1.4;
+	margin-bottom: calc(var(--grid-size) / 4);
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}
+
+.ai-suggestion-hint {
+	color: var(--gray);
+	font-size: 0.8em;
+	text-align: center;
+	border-top: 1px solid var(--faint-gray);
+	padding-top: calc(var(--grid-size) / 4);
+}
+
+/* Loading state */
+.ai-suggestion-loading {
+	align-items: center;
+	color: var(--gray);
+	display: flex;
+	font-size: 0.9em;
+	gap: calc(var(--grid-size) / 2);
+	padding: calc(var(--grid-size) / 2);
+}
+
+.ai-suggestion-loading::before {
+	animation: spin 1s linear infinite;
+	content: '⟳';
+	display: inline-block;
+}
+
+@keyframes spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.ai-suggestion-error {
+	color: var(--red);
+	font-size: 0.9em;
+	padding: calc(var(--grid-size) / 2);
+}
+
+/* Accessibility improvements */
+.ai-suggestion-preview:focus-within {
+	outline: 2px solid var(--blue);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ai-suggestion-loading::before {
+		animation: none;
+	}
+}
+
+/* Dark mode support - if the app supports it */
+@media (prefers-color-scheme: dark) {
+	.ai-suggestion-preview {
+		background: var(--dark-gray, #2a2a2a);
+		border-color: var(--gray, #666);
+		color: var(--off-white, #f0f0f0);
+	}
+	
+	.ai-suggestion-text {
+		color: var(--off-white, #f0f0f0);
+	}
+	
+	.ai-suggestion-ghost {
+		color: var(--gray, #999);
+	}
+} 

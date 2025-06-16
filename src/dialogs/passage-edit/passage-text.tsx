@@ -8,6 +8,7 @@ import {StoryFormat} from '../../store/story-formats';
 import {useCodeMirrorPassageHints} from '../../store/use-codemirror-passage-hints';
 import {useFormatCodeMirrorMode} from '../../store/use-format-codemirror-mode';
 import {codeMirrorOptionsFromPrefs} from '../../util/codemirror-options';
+import {useAICompletion} from '../../store/use-ai-completion';
 
 export interface PassageTextProps {
 	disabled?: boolean;
@@ -36,6 +37,7 @@ export const PassageText: React.FC<PassageTextProps> = props => {
 		useFormatCodeMirrorMode(storyFormat.name, storyFormat.version) ?? 'text';
 	const codeAreaContainerRef = React.useRef<HTMLDivElement>(null);
 	const {t} = useTranslation();
+	const aiCompletion = useAICompletion(story, passage);
 
 	// These are refs so that changing them doesn't trigger a rerender, and more
 	// importantly, no React effects fire.
@@ -112,6 +114,34 @@ export const PassageText: React.FC<PassageTextProps> = props => {
 		(editor: CodeMirror.Editor) => {
 			onEditorChange(editor);
 
+			// Configure AI completion service
+			console.log('AI completion prefs:', prefs.aiCompletion);
+			if (prefs.aiCompletion.enabled) {
+				console.log('Setting up AI completion...');
+				aiCompletion.configureService({
+					enabled: prefs.aiCompletion.enabled,
+					apiKey: prefs.aiCompletion.apiKey,
+					model: prefs.aiCompletion.model,
+					maxTokens: prefs.aiCompletion.maxTokens
+				});
+
+				// Set up AI completion event handlers
+				editor.on('change', () => {
+					console.log('Editor change detected, triggering AI completion');
+					aiCompletion.generateCompletion(editor);
+				});
+
+				// Show current suggestion if available
+				if (aiCompletion.currentSuggestion && aiCompletion.suggestionPosition) {
+					(editor as any).showAISuggestion(
+						aiCompletion.currentSuggestion,
+						aiCompletion.suggestionPosition
+					);
+				}
+			} else {
+				console.log('AI completion is disabled');
+			}
+
 			// The potential combination of loading a mode and the dialog entrance
 			// animation seems to mess up CodeMirror's cursor rendering. The delay below
 			// is intended to run after the animation completes.
@@ -121,7 +151,7 @@ export const PassageText: React.FC<PassageTextProps> = props => {
 				editor.refresh();
 			}, 400);
 		},
-		[onEditorChange]
+		[onEditorChange, prefs.aiCompletion, aiCompletion]
 	);
 
 	// Emulate the above behavior re: focus if we aren't using CodeMirror.
@@ -139,6 +169,21 @@ export const PassageText: React.FC<PassageTextProps> = props => {
 		}
 	}, []);
 
+	// Sync AI suggestions with the editor when they change
+	React.useEffect(() => {
+		const editor = (codeAreaContainerRef.current as any)?.codeMirrorInstance;
+		if (editor && prefs.useCodeMirror && prefs.aiCompletion.enabled) {
+			if (aiCompletion.currentSuggestion && aiCompletion.suggestionPosition) {
+				(editor as any).showAISuggestion(
+					aiCompletion.currentSuggestion,
+					aiCompletion.suggestionPosition
+				);
+			} else {
+				(editor as any).clearAISuggestion?.();
+			}
+		}
+	}, [aiCompletion.currentSuggestion, aiCompletion.suggestionPosition, prefs.useCodeMirror, prefs.aiCompletion.enabled]);
+
 	const options = React.useMemo(
 		() => ({
 			...codeMirrorOptionsFromPrefs(prefs),
@@ -149,6 +194,17 @@ export const PassageText: React.FC<PassageTextProps> = props => {
 				callback: autocompletePassageNames,
 				prefixes: ['[[', '->']
 			},
+			inlineSuggestions: {
+				enabled: prefs.aiCompletion.enabled,
+				onAccept: (suggestion: string, editor: CodeMirror.Editor) => {
+					console.log('AI suggestion accepted:', suggestion);
+					aiCompletion.acceptSuggestion(editor);
+				},
+				onDismiss: () => {
+					console.log('AI suggestion dismissed');
+					aiCompletion.dismissSuggestion();
+				}
+			},
 			// This value prevents the area from being focused.
 			readOnly: disabled ? 'nocursor' : false
 		}),
@@ -158,7 +214,8 @@ export const PassageText: React.FC<PassageTextProps> = props => {
 			mode,
 			prefs,
 			storyFormatExtensionsDisabled,
-			t
+			t,
+			aiCompletion
 		]
 	);
 

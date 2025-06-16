@@ -13,7 +13,8 @@ export type PrefsAction =
 				| string[]
 				| {name: string; version: string}
 				| {name: string; version: string}[]
-				| Record<string, Color>;
+				| Record<string, Color>
+				| {enabled: boolean; apiKey: string; model: string; maxTokens: number};
 	  }
 	| {type: 'repair'; allFormats: StoryFormat[]};
 
@@ -114,6 +115,15 @@ export interface PrefsState {
 	 * Has the user been shown the welcome route?
 	 */
 	welcomeSeen: boolean;
+	/**
+	 * AI completion settings
+	 */
+	aiCompletion: {
+		enabled: boolean;
+		apiKey: string;
+		model: string;
+		maxTokens: number;
+	};
 }
 
 export type PrefsDispatch = React.Dispatch<PrefsAction>;

@@ -11,14 +11,17 @@ import 'codemirror/mode/css/css';
 import 'codemirror/mode/javascript/javascript';
 import './code-area.css';
 import './codemirror-theme.css';
+import './ai-suggestions.css';
 import classnames from 'classnames';
 import {initPrefixTriggerGlobally} from '../../../codemirror/prefix-trigger';
+import {initInlineSuggestionsGlobally} from '../../../codemirror/inline-suggestions';
 
 // Not ideal by far to do this init here, outside of a component, but we have to
 // set up CodeMirror before the first render. Otherwise, CodeMirror doesn't pick
 // up on options properly.
 
 initPrefixTriggerGlobally();
+initInlineSuggestionsGlobally();
 
 export interface CodeAreaProps extends Omit<IControlledCodeMirror, 'onBeforeChange'> {
 	fontFamily?: string;

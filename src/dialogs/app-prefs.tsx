@@ -5,6 +5,8 @@ import {DialogCard, DialogCardProps} from '../components/container/dialog-card';
 import {CheckboxButton} from '../components/control/checkbox-button';
 import {FontSelect} from '../components/control/font-select';
 import {TextSelect} from '../components/control/text-select';
+import {TextInput} from '../components/control/text-input';
+
 import {setPref, usePrefsContext} from '../store/prefs';
 import {closestAppLocale, locales} from '../util/locales';
 import './app-prefs.css';
@@ -23,6 +25,28 @@ export const AppPrefsDialog: React.FC<
 		if (!value) {
 			dispatch(setPref('editorCursorBlinks', true));
 		}
+	}
+
+	function handleAICompletionEnabledChange(enabled: boolean) {
+		dispatch({
+			type: 'update',
+			name: 'aiCompletion',
+			value: {
+				...prefs.aiCompletion,
+				enabled
+			}
+		} as any);
+	}
+
+	function handleAICompletionApiKeyChange(event: React.ChangeEvent<HTMLInputElement>) {
+		dispatch({
+			type: 'update',
+			name: 'aiCompletion',
+			value: {
+				...prefs.aiCompletion,
+				apiKey: event.target.value
+			}
+		} as any);
 	}
 
 	return (
@@ -105,6 +129,20 @@ export const AppPrefsDialog: React.FC<
 					}
 					scaleLabel={t('dialogs.appPrefs.codeEditorFontScale')}
 				/>
+				<CheckboxButton
+					label="Enable AI auto-completion for story writing"
+					onChange={handleAICompletionEnabledChange}
+					value={prefs.aiCompletion.enabled}
+				/>
+				{prefs.aiCompletion.enabled && (
+					<TextInput
+						onChange={handleAICompletionApiKeyChange}
+						placeholder="sk-..."
+						value={prefs.aiCompletion.apiKey}
+					>
+						OpenAI API Key
+					</TextInput>
+				)}
 			</CardContent>
 		</DialogCard>
 	);

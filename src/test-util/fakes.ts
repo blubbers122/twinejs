@@ -143,6 +143,12 @@ export function fakePrefs(overrides?: Partial<PrefsState>): PrefsState {
 		// editorCursorBlinks in some contexts.
 		useCodeMirror: true,
 		welcomeSeen: faker.datatype.boolean(),
+		aiCompletion: {
+			enabled: faker.datatype.boolean(),
+			apiKey: faker.string.alphanumeric(32),
+			model: faker.helpers.arrayElement(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview']),
+			maxTokens: faker.helpers.arrayElement([50, 100, 200])
+		},
 		...overrides
 	};
 }
