@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {Editor} from 'codemirror';
-import {Story, Passage} from './stories';
+import {Story, Passage} from './stories/stories.types';
 
 interface AICompletionOptions {
 	enabled: boolean;
@@ -23,7 +23,7 @@ class AICompletionService {
 	private constructor() {
 		this.options = {
 			enabled: false,
-			model: 'gpt-3.5-turbo',
+			model: 'o4-mini',
 			maxTokens: 100
 		};
 	}
@@ -67,7 +67,7 @@ class AICompletionService {
 				storyContext: storyContext.substring(0, 200) + '...',
 				textBeforeCursor: adjustedContext.textBefore.substring(Math.max(0, adjustedContext.textBefore.length - 50)),
 				incompleteWord: adjustedContext.incompleteWord,
-				prompt: prompt.substring(0, 300) + '...'
+				prompt: prompt//prompt.substring(0, 300) + '...'
 			});
 
 			const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -89,7 +89,7 @@ class AICompletionService {
 						}
 					],
 					max_tokens: this.options.maxTokens,
-					temperature: 0.7,
+					temperature: 0.9,
 					stop: ['\n\n', '[[', ']]']
 				})
 			});
@@ -123,34 +123,39 @@ class AICompletionService {
 
 	private buildStoryContext(context: CompletionContext): string {
 		const {story, currentPassage} = context;
-		
-		// Get connected passages for context
-		const linkedPassageNames = this.extractPassageLinks(currentPassage.text);
-		const linkedPassages = story.passages.filter(p => 
-			linkedPassageNames.includes(p.name) || p.name === story.startPassage
-		);
-
+		// Get the path from start to current passage
+		const path = this.findPathToPassage(story, currentPassage);
 		let storyContext = `Story Title: ${story.name}\n`;
-		
 		if (story.startPassage) {
 			storyContext += `Start Passage: ${story.startPassage}\n`;
 		}
-
+		// Add previous passages in the path (excluding current)
+		if (path && path.length > 1) {
+			const prev: Passage[] = path.slice(0, -1).slice(-3); // up to 3 previous
+			storyContext += `\nPrevious Passages (in order):\n`;
+			prev.forEach((passage: Passage) => {
+				const excerpt = (passage.text || '').substring(0, 200);
+				storyContext += `- ${passage.name}: ${excerpt}${(passage.text && passage.text.length > 200) ? '...' : ''}\n`;
+			});
+		}
+		// Indicate that the current passage title is the decision made
+		storyContext += `\nNOTE: The title of the current passage ('${currentPassage.name}') represents the decision or choice that was made to reach this point. The continuation should be consistent with that decision.\n`;
 		storyContext += `Current Passage: ${currentPassage.name}\n`;
-		
 		if (currentPassage.tags.length > 0) {
 			storyContext += `Tags: ${currentPassage.tags.join(', ')}\n`;
 		}
-
-		// Add context from linked passages
+		// Add context from linked passages (as before)
+		const linkedPassageNames = this.extractPassageLinks(currentPassage.text);
+		const linkedPassages = story.passages.filter((p: Passage) => 
+			linkedPassageNames.includes(p.name) || p.name === story.startPassage
+		);
 		if (linkedPassages.length > 0) {
 			storyContext += '\nRelated Passages:\n';
-			linkedPassages.slice(0, 3).forEach(passage => {
+			linkedPassages.slice(0, 3).forEach((passage: Passage) => {
 				const excerpt = passage.text.substring(0, 200);
 				storyContext += `- ${passage.name}: ${excerpt}${passage.text.length > 200 ? '...' : ''}\n`;
 			});
 		}
-
 		return storyContext;
 	}
 
@@ -202,7 +207,7 @@ Please provide a natural continuation from the [CURSOR] position that:
 1. Fits the story's tone and style
 2. Maintains narrative consistency
 3. Is appropriate for interactive fiction
-4. Is 1-3 sentences long`;
+4. Is up to 2 sentences long`;
 
 			if (incompleteWord) {
 				promptText += `
@@ -340,6 +345,43 @@ Only return the suggested text continuation, nothing else. Do not surround the t
 		cleaned = cleaned.replace(/\s+/g, ' ').trim();
 		
 		return cleaned;
+	}
+
+	// Helper: Find a plausible path from the start passage to the current passage by following links
+	private findPathToPassage(story: Story, targetPassage: Passage): Passage[] | null {
+		// Build a map from passage name to passage
+		const passageMap = new Map<string, Passage>(story.passages.map((p: Passage) => [p.name, p]));
+		// Find the start passage (by id or name)
+		const startPassage = story.passages.find((p: Passage) => p.id === story.startPassage || p.name === story.startPassage);
+		if (!startPassage) return null;
+		// BFS to find a path
+		const queue: Passage[][] = [[startPassage]];
+		const visited = new Set<string>();
+		while (queue.length > 0) {
+			const path = queue.shift();
+			if (!path) continue;
+			const last = path[path.length - 1];
+			if (!last) continue;
+			if (last.id === targetPassage.id) return path;
+			visited.add(last.id);
+			// Get linked passage names
+			const links = (typeof last.text === 'string') ? (last.text.match(/\[\[([^\]]+)\]\]/g) || []).map((l: string) => {
+				// Remove brackets and extract passage name
+				const inner = l.slice(2, -2);
+				// Handle display|name and display->name, etc.
+				if (inner.includes('->')) return inner.split('->').pop()?.trim() || '';
+				if (inner.includes('<-')) return inner.split('<-')[0].trim();
+				if (inner.includes('|')) return inner.split('|').pop()?.trim() || '';
+				return inner.trim();
+			}) : [];
+			for (const name of links) {
+				const next = passageMap.get(name);
+				if (next && !visited.has(next.id)) {
+					queue.push([...path, next]);
+				}
+			}
+		}
+		return null;
 	}
 }
 
